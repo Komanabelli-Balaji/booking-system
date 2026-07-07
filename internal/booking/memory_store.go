@@ -4,7 +4,7 @@ type MemoryStore struct {
 	bookings map[string]Booking
 }
 
-func NewMemory() *MemoryStore {
+func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		bookings: map[string]Booking{},
 	}
