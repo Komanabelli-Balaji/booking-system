@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/Komanabelli-Balaji/booking-system/internal/adapters/redis"
 )
 
 func TestConcurrentBooking_ExactlyOneWins(t *testing.T) {
-	store := NewConcurrentStore()
+	store := NewRedisStore(redis.NewClient("localhost:6379"))
 	svc := NewService(store)
 
 	const numGoroutines = 100_000
@@ -24,7 +25,7 @@ func TestConcurrentBooking_ExactlyOneWins(t *testing.T) {
 	for i := range numGoroutines {
 		go func(userNum int) {
 			defer wg.Done()
-			err := svc.Book(Booking{
+			_, err := svc.Book(Booking{
 				MovieID: "screen-1",
 				SeatID: "A1",
 				UserID: uuid.New().String(),
