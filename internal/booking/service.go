@@ -22,6 +22,6 @@ func (s *Service) ConfirmSeat(ctx context.Context, sessionID string, userID stri
 	return s.store.Confirm(ctx, sessionID, userID)
 }
 
-func (s *Service) ReleaseSeat(ctx context.Context, sessionID string, userID string) error {
+func (s *Service) ReleaseSeat(ctx context.Context, sessionID string, userID string) (Booking, error) {
 	return s.store.Release(ctx, sessionID, userID)
 }

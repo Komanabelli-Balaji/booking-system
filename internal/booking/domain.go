@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+type Notifier interface {
+	Broadcast(movieID string)
+}
+
 var (
 	ErrSeatAlreadyBooked = errors.New("Seat is already taken")
 )
@@ -24,5 +28,5 @@ type BookingStore interface {
 	ListBookings(movieID string) []Booking
 
 	Confirm(ctx context.Context, sessionID string, userID string) (Booking, error)
-	Release(ctx context.Context, sessionID string, userID string) error
+	Release(ctx context.Context, sessionID string, userID string) (Booking, error)
 }

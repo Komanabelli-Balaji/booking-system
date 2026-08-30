@@ -10,11 +10,12 @@ import (
 )
 
 type handler struct {
-	svc *Service
+	svc      *Service
+	notifier Notifier
 }
 
-func NewHandler(svc *Service) *handler {
-	return &handler{svc}
+func NewHandler(svc *Service, notifier Notifier) *handler {
+	return &handler{svc, notifier}
 }
 
 type holdSeatRequest struct {
@@ -41,6 +42,10 @@ func (h *handler) HoldSeat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 		return
+	}
+
+	if h.notifier != nil {
+		h.notifier.Broadcast(session.MovieID)
 	}
 
 	type holdResponse struct {
@@ -100,6 +105,10 @@ func (h *handler) ConfirmSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.notifier != nil {
+		h.notifier.Broadcast(session.MovieID)
+	}
+
 	utils.WriteJSON(w, http.StatusOK, sessionResponse{
 		SessionID: session.ID,
 		MovieID:   session.MovieID,
@@ -130,10 +139,14 @@ func (h *handler) ReleaseSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.svc.ReleaseSeat(r.Context(), sessionID, req.UserID)
+	session, err := h.svc.ReleaseSeat(r.Context(), sessionID, req.UserID)
 	if err != nil {
 		log.Println(err)
 		return
+	}
+
+	if h.notifier != nil {
+		h.notifier.Broadcast(session.MovieID)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

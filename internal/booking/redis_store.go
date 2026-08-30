@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -126,14 +127,14 @@ func (s *RedisStore) Confirm(ctx context.Context, sessionID string, userID strin
 	return session, nil
 }
 
-func (s *RedisStore) Release(ctx context.Context, sessionID string, userID string) error {
-	_, sk, err := s.getSession(ctx, sessionID, userID)
+func (s *RedisStore) Release(ctx context.Context, sessionID string, userID string) (Booking, error) {
+	session, sk, err := s.getSession(ctx, sessionID, userID)
 	if err != nil {
-		return err
+		return Booking{}, err
 	}
 
 	s.rdb.Del(ctx, sk, sessionKey(sessionID))
-	return nil
+	return session, nil
 }
 
 func (s *RedisStore) getSession(ctx context.Context, sessionID string, userID string) (Booking, string, error) {
@@ -157,4 +158,26 @@ func (s *RedisStore) getSession(ctx context.Context, sessionID string, userID st
 	}
 
 	return session, sk, nil
+}
+
+func ListenForExpirations(ctx context.Context, rdb *redis.Client, notifier Notifier) {
+	rdb.ConfigSet(ctx, "notify-keyspace-events", "Ex")
+
+	pubsub := rdb.Subscribe(ctx, "__keyevent@0__:expired")
+	ch := pubsub.Channel()
+
+	go func() {
+		for msg := range ch {
+			key := msg.Payload
+			if strings.HasPrefix(key, "seat:") {
+				parts := strings.Split(key, ":")
+				if len(parts) >= 2 {
+					movieID := parts[1]
+					if notifier != nil {
+						notifier.Broadcast(movieID)
+					}
+				}
+			}
+		}
+	}()
 }
