@@ -14,3 +14,12 @@ services:
     ports:
       - "8081:8081"
     user: redis
+  app:
+    container_name: booking-app
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - redis
