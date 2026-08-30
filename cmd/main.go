@@ -1,23 +1,38 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+
+	"os"
 
 	"github.com/Komanabelli-Balaji/booking-system/internal/adapters/redis"
 	"github.com/Komanabelli-Balaji/booking-system/internal/booking"
 	"github.com/Komanabelli-Balaji/booking-system/internal/utils"
+	"github.com/Komanabelli-Balaji/booking-system/internal/ws"
 )
 
 func main() {
 	mux := http.NewServeMux()
 
-	store := booking.NewRedisStore(redis.NewClient("localhost:6379"))
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
+	rdb := redis.NewClient(redisAddr)
+	store := booking.NewRedisStore(rdb)
 	svc := booking.NewService(store)
 
-	bookingHandler := booking.NewHandler(svc)
+	hub := ws.NewHub()
+
+	booking.ListenForExpirations(context.Background(), rdb, hub)
+
+	bookingHandler := booking.NewHandler(svc, hub)
 
 	mux.Handle("GET /", http.FileServer(http.Dir("static")))
+	mux.HandleFunc("GET /ws", hub.HandleWebSocket)
 	mux.HandleFunc("GET /movies", listMovies)
 
 	mux.HandleFunc("GET /movies/{movieID}/seats", bookingHandler.ListSeats)

@@ -5,8 +5,8 @@
   let movies = [];
   let selectedMovie = null;
   let activeSession = null; // { sessionID, movieID, seatID, expiresAt }
-  let pollInterval = null;
   let timerInterval = null;
+  let ws = null;
 
   // --- API helpers ---
 
@@ -75,7 +75,9 @@
     document.getElementById("mainContent").style.display = "flex";
     document.getElementById("checkoutArea").innerHTML = "";
     fetchSeats();
-    startPolling();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "subscribe", movie_id: movie.id }));
+    }
   }
 
   // --- Seat grid ---
@@ -290,11 +292,32 @@
     }
   }
 
-  // --- Polling ---
+  // --- WebSocket ---
 
-  function startPolling() {
-    if (pollInterval) clearInterval(pollInterval);
-    pollInterval = setInterval(fetchSeats, 2000);
+  function initWebSocket() {
+    var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(protocol + "//" + window.location.host + "/ws");
+    
+    ws.onmessage = function (event) {
+      try {
+        var msg = JSON.parse(event.data);
+        if (msg.type === "seats_changed" && selectedMovie && msg.movie_id === selectedMovie.id) {
+          fetchSeats();
+        }
+      } catch (e) {
+        console.error("Invalid WS message:", e);
+      }
+    };
+
+    ws.onopen = function () {
+      if (selectedMovie) {
+        ws.send(JSON.stringify({ action: "subscribe", movie_id: selectedMovie.id }));
+      }
+    };
+
+    ws.onclose = function () {
+      setTimeout(initWebSocket, 2000);
+    };
   }
 
   // --- Util ---
@@ -307,5 +330,6 @@
 
   // --- Init ---
 
+  initWebSocket();
   loadMovies();
 })();
