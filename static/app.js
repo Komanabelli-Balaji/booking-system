@@ -164,7 +164,7 @@
         startTimer();
       })
       .catch(function (err) {
-        showCheckoutStatus(err.message, "error");
+        showToast(err.message, "error");
       });
   }
 
@@ -177,10 +177,11 @@
         clearTimerInterval();
         activeSession = null;
         fetchSeats();
-        showCheckoutStatus("Confirmed!", "success");
+        showToast("Confirmed!", "success");
+        document.getElementById("checkoutArea").innerHTML = "";
       })
       .catch(function (err) {
-        showCheckoutStatus(err.message, "error");
+        showToast(err.message, "error");
       });
   }
 
@@ -196,7 +197,7 @@
         document.getElementById("checkoutArea").innerHTML = "";
       })
       .catch(function (err) {
-        showCheckoutStatus(err.message, "error");
+        showToast(err.message, "error");
       });
   }
 
@@ -222,7 +223,6 @@
       '<button class="btn btn--confirm" id="btnConfirm">Confirm</button>' +
       '<button class="btn btn--release" id="btnRelease">Release</button>' +
       "</div>" +
-      '<div id="checkoutStatus"></div>' +
       "</div>";
     document
       .getElementById("btnConfirm")
@@ -232,18 +232,22 @@
       .addEventListener("click", releaseSeat);
   }
 
-  function showCheckoutStatus(msg, type) {
-    var area = document.getElementById("checkoutArea");
-    area.innerHTML =
-      '<div class="checkout">' +
-      '<div class="status-msg ' +
-      type +
-      '">' +
-      escapeHtml(msg) +
-      "</div>" +
-      "</div>";
+  function showToast(msg, type) {
+    var toast = document.createElement("div");
+    toast.className = "toast " + type;
+    
+    var icon = "💬";
+    if (type === "error") icon = "⚠️";
+    if (type === "success") icon = "✅";
+
+    toast.innerHTML = '<span class="toast-icon">' + icon + '</span><span>' + escapeHtml(msg) + '</span>';
+    document.body.appendChild(toast);
+
     setTimeout(function () {
-      if (!activeSession) area.innerHTML = "";
+      toast.classList.add("hiding");
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 400);
     }, 3000);
   }
 
@@ -281,7 +285,7 @@
       clearTimerInterval();
       activeSession = null;
       fetchSeats();
-      showCheckoutStatus("Hold expired", "error");
+      showToast("Hold expired", "error");
     }
   }
 
