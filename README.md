@@ -6,7 +6,7 @@ A real-time cinema seat booking system built with **Go** and **Redis**. Users ca
 
 - **Seat Holds with TTL**: Seats are temporarily held for 2 minutes using Redis key expiration. If the user doesn't confirm in time, the seat is automatically released.
 - **Atomic Seat Locking**: Uses Redis `SET NX` to guarantee that only one user can hold a given seat, even under heavy concurrency (tested with 100k goroutines).
-- **Real-Time Seat Map**: The frontend polls the server every 2 seconds, so all connected users see seat availability update in near real-time.
+- **Real-Time Seat Map**: Uses WebSockets and Redis Keyspace Notifications to push seat availability updates instantly to all connected clients viewing the same movie.
 - **Session Ownership Validation**: Confirm and release operations verify that the requesting user owns the session before proceeding.
 - **Interactive Frontend**: A vanilla HTML/CSS/JS interface with a cinema-style seat grid, countdown timer, and checkout panel.
 
@@ -17,7 +17,7 @@ A real-time cinema seat booking system built with **Go** and **Redis**. Users ca
 | Backend   | Go 1.26 (stdlib `net/http`) |
 | Storage   | Redis 7                   |
 | Frontend  | Vanilla HTML / CSS / JS   |
-| Tooling   | Docker Compose            |
+| Tooling   | Docker, Docker Compose    |
 
 ## Project Structure
 
@@ -37,13 +37,18 @@ booking-system/
 │   │   ├── memory_store.go             # Simple in-memory store (no concurrency safety)
 │   │   ├── concurrent_store.go         # Mutex-protected in-memory store
 │   │   └── service_test.go             # Concurrency test (100k goroutines race for 1 seat)
-│   └── utils/
-│       └── utils.go                    # JSON response helper
+│   ├── utils/
+│   │   └── utils.go                    # JSON response helper
+│   └── ws/
+│       ├── hub.go                      # WebSocket Hub managing clients per movie
+│       ├── client.go                   # WebSocket connection wrapper
+│       └── hub_test.go                 # Hub unit tests
 ├── static/
 │   ├── index.html                      # Single-page app shell
 │   ├── style.css                       # Cinema-themed UI styles
 │   └── app.js                          # Client-side logic (seat grid, polling, checkout)
-├── docker-compose.yaml                 # Redis + Redis Commander services
+├── docker-compose.yaml                 # App, Redis + Redis Commander services
+├── Dockerfile                          # Multi-stage Go application build
 ├── go.mod
 └── go.sum
 ```
@@ -54,13 +59,16 @@ booking-system/
 ┌────────────┐          ┌──────────────┐        ┌─────────────────┐         ┌───────────┐
 │  Browser   │──HTTP──▶│  net/http    │──────▶ │  booking.Service│──────▶ │   Redis   │
 │  (static/) │◀─JSON───│  (handlers)  │◀────── │ (business logic)│◀────── │  (store)  │
-└────────────┘          └──────────────┘        └─────────────────┘         └───────────┘
+└─────┬──────┘          └──────────────┘        └─────────────────┘         └─────┬─────┘
+      │                          ▲                                                │
+      │   WebSocket              │               (Broadcaster)                    │
+      └──────────────────────────┴─────────────── ws.Hub ◀───(Keyspace Expiry)────┘
 ```
 
 The codebase follows a **layered architecture**:
 
 1. **Handler**: Parses HTTP requests, calls the service, writes JSON responses.
-2. **Service**: Thin orchestration layer over the `BookingStore` interface.
+2. **Service**: Thin orchestration layer over `BookingStore` interface.
 3. **Store**: Swappable storage backends implementing `BookingStore`:
    - `RedisStore`: Production store with atomic operations and TTL-based expiration.
    - `ConcurrentStore`: In-memory store guarded by `sync.RWMutex`.
@@ -178,19 +186,25 @@ Manually releases a held seat before it expires.
 - [Go 1.26+](https://go.dev/dl/)
 - [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/)
 
-### 1. Start Redis
+### 1. Run Everything via Docker
+
+You can easily build the Go application and spin it up along with Redis using Docker Compose:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 This starts:
+- **booking-app** (Go Server) on `localhost:8080`
 - **Redis** on `localhost:6379`
 - **Redis Commander** (web UI) on `localhost:8081`
 
-### 2. Run the Server
+### 2. Local Development (Alternative)
+
+If you prefer to run the Go application natively while keeping Redis in Docker:
 
 ```bash
+docker compose up -d redis redis-commander
 go run ./cmd
 ```
 
@@ -203,9 +217,9 @@ Navigate to [http://localhost:8080](http://localhost:8080) in your browser. Open
 ## How It Works
 
 1. **Browse**: The landing page loads the movie catalog from `GET /movies`.
-2. **Select a Movie**: Click a movie card to view its seat grid. The frontend polls `GET /movies/{id}/seats` every 2 seconds.
-3. **Hold a Seat**: Click an available seat. The server atomically sets a Redis key with `SET NX` and a 2-minute TTL. A checkout panel appears with a countdown timer.
-4. **Confirm or Release**: Confirm removes the TTL (seat is permanently booked). Release deletes the key immediately. If the timer runs out, Redis expires the key automatically.
+2. **Select a Movie**: Click a movie card to view its seat grid. The frontend connects to the WebSocket endpoint `/ws` and subscribes to that movie's updates.
+3. **Hold a Seat**: Click an available seat. The server atomically sets a Redis key with `SET NX` and a 2-minute TTL, and triggers a WebSocket broadcast. A checkout panel appears with a countdown timer.
+4. **Confirm or Release**: Confirm removes the TTL (seat is permanently booked). Release deletes the key immediately. If the timer runs out, Redis fires a keyspace expiration event, which automatically pushes a WebSocket broadcast to refresh the seats.
 
 ### Redis Key Schema
 
@@ -227,7 +241,7 @@ This spawns **100,000 goroutines** all racing to book the same seat, verifying t
 ## Future Plan
 
 - [ ] **Admin Routes**: Add admin endpoints to create, update, and delete movies and configure seating layouts (rows, seats per row) dynamically instead of hardcoding them.
-- [ ] **WebSocket Updates**: Replace the 2-second polling with WebSocket connections so seat state changes are pushed to all connected clients instantly.
+- [x] **WebSocket Updates**: Replace the 2-second polling with WebSocket connections so seat state changes are pushed to all connected clients instantly.
 - [ ] **PostgreSQL Adapter**: Implement a `PostgresStore` behind the existing `BookingStore` interface for durable, queryable storage with transaction support.
 - [ ] **User Authentication**: Add proper auth (JWT or session-based) instead of relying on client-generated user IDs.
 - [ ] **Showtime Support**: Extend the movie model with showtimes and dates so the same movie can have multiple screenings with independent seat maps.
